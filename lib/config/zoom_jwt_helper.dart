@@ -8,7 +8,7 @@ class ZoomJwtHelper {
     int roleType = 1,
   }) {
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final iat = now - 30;
+    final iat = now;
     final exp = iat + 60 * 60;
 
     final jwt = JWT({

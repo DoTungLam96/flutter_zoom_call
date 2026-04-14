@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:vtb_video_call/screens/zoom_video_screen.dart';
+import 'package:vtb_video_call/screens/zoom_join_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -58,7 +58,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 Navigator.push(
                   context,
                   MaterialPageRoute<void>(
-                    builder: (context) => const ZoomVideoScreen(),
+                    builder: (context) => const ZoomJoinScreen(),
                   ),
                 );
               },
