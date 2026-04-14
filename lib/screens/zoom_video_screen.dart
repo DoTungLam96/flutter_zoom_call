@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_zoom_videosdk/native/zoom_videosdk.dart';
 import 'package:flutter_zoom_videosdk/native/zoom_videosdk_event_listener.dart';
+import 'package:vtb_video_call/config/config.dart';
 import 'package:vtb_video_call/config/zoom_jwt_helper.dart';
 
 class ZoomVideoScreen extends StatefulWidget {
@@ -14,18 +15,17 @@ class _ZoomVideoScreenState extends State<ZoomVideoScreen> {
   final ZoomVideoSdk _zoom = ZoomVideoSdk();
   final ZoomVideoSdkEventListener _listener = ZoomVideoSdkEventListener();
 
-  final TextEditingController _tokenController = TextEditingController();
-  final TextEditingController _sessionNameController = TextEditingController(text: 'vtb_topic');
-  final TextEditingController _displayNameController = TextEditingController(text: 'A');
+  final TextEditingController _sessionNameController = TextEditingController(text: defaultSessionName);
+  final TextEditingController _displayNameController = TextEditingController(text: defaultDisplayName);
 
   bool _sdkReady = false;
   bool _joining = false;
   bool _inSession = false;
   bool _isMuted = false;
   bool _isVideoOn = true;
-  String _generatedToken = '';
 
   String _status = 'Chưa khởi tạo SDK';
+  String _generatedToken = '';
   final List<String> _remoteUsers = [];
 
   @override
@@ -59,7 +59,10 @@ class _ZoomVideoScreenState extends State<ZoomVideoScreen> {
 
   void _bindEvents() {
     _listener.addListener(EventType.onSessionJoin, (data) async {
+      print('LamDT_onSessionJoin: $data');
+
       final users = await _zoom.session.getRemoteUsers();
+
       if (!mounted) return;
       setState(() {
         _inSession = true;
@@ -72,6 +75,8 @@ class _ZoomVideoScreenState extends State<ZoomVideoScreen> {
     });
 
     _listener.addListener(EventType.onSessionLeave, (data) {
+      print('LamDT_onSessionLeave: $data');
+
       if (!mounted) return;
       setState(() {
         _inSession = false;
@@ -84,7 +89,10 @@ class _ZoomVideoScreenState extends State<ZoomVideoScreen> {
     });
 
     _listener.addListener(EventType.onUserJoin, (data) async {
+      print('LamDT_onUserJoin: $data');
+
       final users = await _zoom.session.getRemoteUsers();
+
       if (!mounted) return;
       setState(() {
         _remoteUsers
@@ -95,7 +103,10 @@ class _ZoomVideoScreenState extends State<ZoomVideoScreen> {
     });
 
     _listener.addListener(EventType.onUserLeave, (data) async {
+      print('LamDT_onUserLeave: $data');
+
       final users = await _zoom.session.getRemoteUsers();
+
       if (!mounted) return;
       setState(() {
         _remoteUsers
@@ -106,6 +117,8 @@ class _ZoomVideoScreenState extends State<ZoomVideoScreen> {
     });
 
     _listener.addListener(EventType.onError, (data) {
+      print('LamDT_onError: $data');
+
       if (!mounted) return;
       setState(() {
         _joining = false;
@@ -117,6 +130,13 @@ class _ZoomVideoScreenState extends State<ZoomVideoScreen> {
   Future<void> _joinSession() async {
     final sessionName = _sessionNameController.text.trim();
     final displayName = _displayNameController.text.trim();
+
+    if (!_sdkReady) {
+      setState(() {
+        _status = 'SDK chưa sẵn sàng';
+      });
+      return;
+    }
 
     if (sessionName.isEmpty || displayName.isEmpty) {
       setState(() {
@@ -131,19 +151,17 @@ class _ZoomVideoScreenState extends State<ZoomVideoScreen> {
       roleType: 1,
     );
 
-    _tokenController.text = token;
+    print('LamDT_sessionName=$sessionName');
+    print('LamDT_displayName=$displayName');
+    print('LamDT_generatedToken=$token');
 
-    if (!mounted) return;
     setState(() {
       _generatedToken = token;
+      _joining = true;
+      _status = 'Đang join session...';
     });
 
     try {
-      setState(() {
-        _joining = true;
-        _status = 'Đang join session...';
-      });
-
       await _zoom.joinSession(
         JoinSessionConfig(
           sessionName: sessionName,
@@ -160,14 +178,9 @@ class _ZoomVideoScreenState extends State<ZoomVideoScreen> {
           sessionIdleTimeoutMins: 40,
         ),
       );
-
-      if (!mounted) return;
-      setState(() {
-        _joining = false;
-        _inSession = true;
-        _status = 'Đã join session';
-      });
     } catch (e) {
+      print('LamDT_joinSession catch: $e');
+
       if (!mounted) return;
       setState(() {
         _joining = false;
@@ -180,6 +193,13 @@ class _ZoomVideoScreenState extends State<ZoomVideoScreen> {
   Future<void> _leaveSession() async {
     try {
       await _zoom.leaveSession(false);
+
+      if (!mounted) return;
+      setState(() {
+        _inSession = false;
+        _joining = false;
+        _status = 'Đã rời session';
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -196,7 +216,7 @@ class _ZoomVideoScreenState extends State<ZoomVideoScreen> {
       if (userId == null || userId.isEmpty) {
         if (!mounted) return;
         setState(() {
-          _status = 'Không lấy được userId của chính bạn';
+          _status = 'Không lấy được userId';
         });
         return;
       }
@@ -241,9 +261,13 @@ class _ZoomVideoScreenState extends State<ZoomVideoScreen> {
     }
   }
 
+  String _shortToken(String token) {
+    if (token.length <= 100) return token;
+    return '${token.substring(0, 100)}...';
+  }
+
   @override
   void dispose() {
-    _tokenController.dispose();
     _sessionNameController.dispose();
     _displayNameController.dispose();
     super.dispose();
@@ -297,7 +321,7 @@ class _ZoomVideoScreenState extends State<ZoomVideoScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  _generatedToken.isEmpty ? 'JWT Token: Chưa generate' : 'JWT Token:\n$_generatedToken',
+                  _generatedToken.isEmpty ? 'JWT Token: Chưa generate' : 'JWT Token:\n${_shortToken(_generatedToken)}',
                 ),
               ),
               const SizedBox(height: 16),

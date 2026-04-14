@@ -6,22 +6,20 @@ class ZoomJwtHelper {
     required String sessionName,
     required String userIdentity,
     int roleType = 1,
-    int expireInSeconds = 60 * 60,
   }) {
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final exp = now + expireInSeconds;
+    final iat = now - 30;
+    final exp = iat + 60 * 60;
 
-    final jwt = JWT(
-      {
-        'app_key': zoomSdkKey,
-        'version': 1,
-        'role_type': roleType,
-        'tpc': sessionName,
-        'user_identity': userIdentity,
-        'iat': now,
-        'exp': exp,
-      },
-    );
+    final jwt = JWT({
+      'app_key': zoomSdkKey,
+      'role_type': roleType,
+      'tpc': sessionName.trim(),
+      'version': 1,
+      'iat': iat,
+      'exp': exp,
+      'user_key': userIdentity.trim(),
+    });
 
     return jwt.sign(
       SecretKey(zoomSdkSecret),
