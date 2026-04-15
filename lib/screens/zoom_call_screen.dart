@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_zoom_videosdk/native/zoom_videosdk.dart';
 import 'package:flutter_zoom_videosdk/native/zoom_videosdk_event_listener.dart';
+import 'package:flutter_zoom_videosdk/native/zoom_videosdk_share_action.dart';
 import 'package:flutter_zoom_videosdk/native/zoom_videosdk_user.dart';
 import 'package:vtb_video_call/screens/widgets/zoom_video_view.dart';
 
@@ -28,11 +30,15 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
   ZoomVideoSdkUser? _mySelf;
   List<ZoomVideoSdkUser> _users = [];
   ZoomVideoSdkUser? _fullScreenUser;
+  ZoomVideoSdkUser? _sharingUser;
+
+  bool _isShareStarting = false;
 
   bool _isMuted = false;
   bool _isVideoOn = true;
   bool _isSpeakerOn = true;
   bool _controlsVisible = true;
+  bool _isSharing = false;
 
   Timer? _callTimer;
   int _callSeconds = 0;
@@ -40,9 +46,10 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
   @override
   void initState() {
     super.initState();
-    _bindEvents();
+
     _loadInitialState();
     _startTimer();
+    _bindEvents();
   }
 
   Future<void> _loadInitialState() async {
@@ -83,13 +90,18 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
         _isSpeakerOn = speakerOn;
       });
     } catch (e) {
-      debugPrint('loadInitialState error: $e');
+      print('LamDT: loadInitialState error: $e');
     }
   }
 
   void _bindEvents() {
     widget.listener.addListener(EventType.onUserJoin, (data) async {
       await _refreshUsers();
+    });
+
+    widget.listener.addListener(EventType.onUserShareStatusChanged, (data) async {
+      print('LamDT: [share_event] raw=$data');
+      await _handleShareStatusChanged(data);
     });
 
     widget.listener.addListener(EventType.onUserLeave, (data) async {
@@ -102,8 +114,46 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
     });
 
     widget.listener.addListener(EventType.onError, (data) {
-      debugPrint('Zoom error: $data');
+      print('LamDT: Zoom error: $data');
     });
+  }
+
+  Future<void> _handleShareStatusChanged(dynamic data) async {
+    try {
+      print('LamDT: [share_event] raw=$data');
+
+      data = data as Map;
+      final mySelf = await widget.zoom.session.getMySelf();
+      if (mySelf == null || !mounted) return;
+
+      final shareUser = ZoomVideoSdkUser.fromJson(
+        jsonDecode(data['user'].toString()),
+      );
+
+      final shareAction = ZoomVideoSdkShareAction.fromJson(
+        jsonDecode(data['shareAction'].toString()),
+      );
+
+      final started = shareAction.shareStatus == ShareStatus.Start || shareAction.shareStatus == ShareStatus.Resume;
+
+      if (started) {
+        setState(() {
+          _sharingUser = shareUser;
+          _fullScreenUser = shareUser;
+          _isSharing = shareUser.userId == mySelf.userId;
+          _isShareStarting = false;
+        });
+      } else {
+        setState(() {
+          _sharingUser = null;
+          _isSharing = false;
+          _isShareStarting = false;
+          _fullScreenUser = _users.isNotEmpty ? _users.first : _mySelf;
+        });
+      }
+    } catch (e) {
+      print('LamDT: handleShareStatusChanged error: $e');
+    }
   }
 
   Future<void> _refreshUsers() async {
@@ -125,7 +175,7 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
         _fullScreenUser = nextFullScreen;
       });
     } catch (e) {
-      debugPrint('refreshUsers error: $e');
+      print('LamDT: refreshUsers error: $e');
     }
   }
 
@@ -168,18 +218,13 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
         _isMuted = !_isMuted;
       });
     } catch (e) {
-      debugPrint('toggleMute error: $e');
+      print('LamDT: toggleMute error: $e');
     }
   }
 
   Future<void> _toggleSpeaker() async {
     try {
-      // getSpeakerStatus() là API có trong docs Flutter get-started sample.
-      // Hàm set speaker có thể khác tên tùy bản wrapper bạn đang dùng.
-      // Nếu IDE không nhận switchSpeaker / setSpeakerStatus thì thay đúng theo bản package của bạn.
       final nextValue = !_isSpeakerOn;
-
-      // Ưu tiên thử method này nếu package của bạn có:
       await widget.zoom.audioHelper.setSpeaker(nextValue);
 
       if (!mounted) return;
@@ -187,7 +232,7 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
         _isSpeakerOn = nextValue;
       });
     } catch (e) {
-      debugPrint('toggleSpeaker error: $e');
+      print('LamDT: toggleSpeaker error: $e');
     }
   }
 
@@ -204,17 +249,84 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
         _isVideoOn = !_isVideoOn;
       });
     } catch (e) {
-      debugPrint('toggleVideo error: $e');
+      print('LamDT: toggleVideo error: $e');
+    }
+  }
+
+  Future<void> _toggleShareScreen() async {
+    try {
+      final shareHelper = widget.zoom.shareHelper;
+
+      if (_isShareStarting) return;
+
+      if (_isSharing) {
+        await shareHelper.stopShare();
+        if (!mounted) return;
+        setState(() {
+          _isSharing = false;
+          _isShareStarting = false;
+          _sharingUser = null;
+          _fullScreenUser = _users.isNotEmpty ? _users.first : _mySelf;
+        });
+        return;
+      }
+
+      final isOtherSharing = await shareHelper.isOtherSharing();
+      final isShareLocked = await shareHelper.isShareLocked();
+
+      if (isOtherSharing) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đang có người khác share màn hình')),
+        );
+        return;
+      }
+
+      if (isShareLocked) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Host đang khóa share màn hình')),
+        );
+        return;
+      }
+
+      setState(() {
+        _isShareStarting = true;
+      });
+
+      unawaited(
+        shareHelper.shareScreen().catchError((e, s) {
+          print('LamDT: shareScreen async error: $e');
+          print('LamDT: $s');
+
+          if (!mounted) return;
+          setState(() {
+            _isShareStarting = false;
+            _isSharing = false;
+          });
+        }),
+      );
+    } catch (e) {
+      print('LamDT: toggleShareScreen error: $e');
+      if (!mounted) return;
+      setState(() {
+        _isShareStarting = false;
+        _isSharing = false;
+      });
     }
   }
 
   Future<void> _leaveSession() async {
     try {
+      if (_isSharing) {
+        try {
+          await widget.zoom.shareHelper.stopShare();
+        } catch (_) {}
+      }
+
       await widget.zoom.leaveSession(false);
       if (!mounted) return;
       Navigator.of(context).pop();
     } catch (e) {
-      debugPrint('leaveSession error: $e');
+      print('LamDT: leaveSession error: $e');
     }
   }
 
@@ -254,9 +366,10 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
     );
   }
 
-  ///Build video full màn hình
   Widget _buildRemoteFullScreen() {
-    if (_fullScreenUser == null) {
+    final userToShow = _sharingUser ?? _fullScreenUser;
+
+    if (userToShow == null) {
       return Container(
         color: Colors.black,
         alignment: Alignment.center,
@@ -267,16 +380,14 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
       );
     }
 
-    return Positioned.fill(
-      child: ZoomVideoView(
-        user: _fullScreenUser,
-        fullScreen: true,
-        videoAspect: VideoAspect.FullFilled,
-      ),
+    return ZoomVideoView(
+      user: userToShow,
+      fullScreen: true,
+      sharing: _sharingUser?.userId == userToShow.userId,
+      videoAspect: VideoAspect.FullFilled,
     );
   }
 
-  ///Build camera góc phải màn hình
   Widget _buildLocalPreview() {
     if (_mySelf == null) return const SizedBox.shrink();
 
@@ -289,6 +400,7 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
         child: ZoomVideoView(
           user: _mySelf,
           fullScreen: false,
+          sharing: false,
           videoAspect: VideoAspect.FullFilled,
           borderRadius: BorderRadius.circular(16),
         ),
@@ -323,6 +435,17 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
                   fontSize: 14,
                 ),
               ),
+              if (_isSharing) ...[
+                const SizedBox(height: 6),
+                const Text(
+                  'Đang share màn hình',
+                  style: TextStyle(
+                    color: Colors.greenAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -342,8 +465,10 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
           ignoring: !_controlsVisible,
           child: SafeArea(
             top: false,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 18,
+              runSpacing: 18,
               children: [
                 _buildBottomButton(
                   icon: _isMuted ? Icons.mic_off : Icons.mic,
@@ -362,6 +487,16 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
                   label: 'Camera',
                   bgColor: _isVideoOn ? Colors.white24 : Colors.grey,
                   onTap: _toggleVideo,
+                ),
+                _buildBottomButton(
+                  icon: (_isSharing || _isShareStarting) ? Icons.stop_screen_share : Icons.screen_share,
+                  label: _isSharing
+                      ? 'Stop Share'
+                      : _isShareStarting
+                          ? 'Starting...'
+                          : 'Share',
+                  bgColor: (_isSharing || _isShareStarting) ? Colors.orange : Colors.white24,
+                  onTap: _toggleShareScreen,
                 ),
                 _buildBottomButton(
                   icon: Icons.call_end,

@@ -7,6 +7,7 @@ class ZoomVideoView extends StatelessWidget {
   final ZoomVideoSdkUser? user;
   final String videoAspect;
   final bool fullScreen;
+  final bool sharing;
   final BorderRadius? borderRadius;
   final Color backgroundColor;
 
@@ -15,6 +16,7 @@ class ZoomVideoView extends StatelessWidget {
     required this.user,
     this.videoAspect = VideoAspect.FullFilled,
     this.fullScreen = false,
+    this.sharing = false,
     this.borderRadius,
     this.backgroundColor = Colors.black,
   });
@@ -34,11 +36,12 @@ class ZoomVideoView extends StatelessWidget {
     }
 
     final view = zoom_view.View(
-      key: Key(user!.userId),
+      key: ValueKey('${user!.userId}_${sharing}_${fullScreen}'),
       creationParams: {
         'userId': user!.userId,
         'videoAspect': videoAspect,
         'fullScreen': fullScreen,
+        'sharing': sharing,
       },
     );
 
