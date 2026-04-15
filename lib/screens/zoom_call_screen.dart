@@ -6,6 +6,7 @@ import 'package:flutter_zoom_videosdk/native/zoom_videosdk.dart';
 import 'package:flutter_zoom_videosdk/native/zoom_videosdk_event_listener.dart';
 import 'package:flutter_zoom_videosdk/native/zoom_videosdk_share_action.dart';
 import 'package:flutter_zoom_videosdk/native/zoom_videosdk_user.dart';
+import 'package:vtb_video_call/screens/share_screen/zoom_share_screen.dart';
 import 'package:vtb_video_call/screens/widgets/zoom_video_view.dart';
 
 class ZoomCallScreen extends StatefulWidget {
@@ -496,7 +497,16 @@ class _ZoomCallScreenState extends State<ZoomCallScreen> {
                           ? 'Starting...'
                           : 'Share',
                   bgColor: (_isSharing || _isShareStarting) ? Colors.orange : Colors.white24,
-                  onTap: _toggleShareScreen,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ZoomShareScreen(
+                          zoom: widget.zoom,
+                          listener: widget.listener,
+                        ),
+                      ),
+                    );
+                  },
                 ),
                 _buildBottomButton(
                   icon: Icons.call_end,
